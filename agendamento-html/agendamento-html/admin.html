@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Painel Administrativo</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<div class="wrap wide" id="wrap">
+
+  <div id="login-box" style="max-width:380px;margin:60px auto;">
+    <h1 class="center">Painel Administrativo</h1>
+    <div class="card">
+      <label for="pwd">Senha</label>
+      <input type="password" id="pwd">
+      <div id="login-error" class="error-box" style="display:none;"></div>
+      <button class="btn" id="btn-login">Entrar</button>
+    </div>
+  </div>
+
+  <div id="panel" style="display:none;">
+    <div class="row-between" style="margin-bottom:20px;">
+      <h1 style="margin:0;">Painel Administrativo</h1>
+      <div>
+        <button class="btn small secondary" id="btn-import">📂 Importar planilha</button>
+        <button class="btn small" id="btn-export">📥 Exportar Excel</button>
+      </div>
+    </div>
+    <div id="error" class="error-box" style="display:none;"></div>
+    <div id="list"><div class="loading">Carregando...</div></div>
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="assets/config.js"></script>
+<script>
+let password = sessionStorage.getItem("admin_password") || "";
+let allData = [];
+
+function showLoginError(msg) {
+  const box = document.getElementById("login-error");
+  box.textContent = msg;
+  box.style.display = msg ? "block" : "none";
+}
+
+function showError(msg) {
+  const box = document.getElementById("error");
+  box.textContent = msg;
+  box.style.display = msg ? "block" : "none";
+}
+
+async function tryLogin() {
+  const { data, error } = await supabase.rpc("admin_get_all", { p_password: password });
+  if (error) {
+    showLoginError("Senha incorreta.");
+    sessionStorage.removeItem("admin_password");
+    return false;
+  }
+  allData = data || [];
+  sessionStorage.setItem("admin_password", password);
+  document.getElementById("login-box").style.display = "none";
+  document.getElementById("panel").style.display = "block";
+  renderList();
+  return true;
+}
+
+document.getElementById("btn-login").addEventListener("click", async () => {
+  password = document.getElementById("pwd").value;
+  await tryLogin();
+});
+
+function renderList() {
+  const list = document.getElementById("list");
+  if (allData.length === 0) {
+    list.innerHTML = '<div class="card center muted">Nenhum agendamento ainda.</div>';
+    return;
+  }
+
+  list.innerHTML = allData.map((p) => {
+    const testsHtml = TESTS.map((t) => {
+      const b = (p.bookings || []).find((bk) => bk.test_id === t.id);
+      return `<div class="test-pill">
+        <div>
+          <div style="font-weight:600;">${t.icon} ${t.label}</div>
+          <div class="muted" style="text-transform:capitalize;">
+            ${b ? formatDateFull(b.date) + (b.time ? " às " + b.time : "") : "Não agendado"}
+          </div>
+        </div>
+        ${b ? `<button class="btn small danger" data-booking="${b.booking_id}">✕</button>` : ""}
+      </div>`;
+    }).join("");
+
+    return `<div class="card">
+      <div class="row-between" style="margin-bottom:10px;align-items:flex-start;">
+        <div>
+          <div style="font-weight:700;font-size:18px;">${p.name}</div>
+          <div class="muted">${p.whatsapp}</div>
+        </div>
+        <button class="btn small danger" data-participant="${p.id}">Excluir participante</button>
+      </div>
+      ${testsHtml}
+    </div>`;
+  }).join("");
+
+  list.querySelectorAll("[data-booking]").forEach((btn) => {
+    btn.addEventListener("click", () => deleteBooking(btn.getAttribute("data-booking")));
+  });
+  list.querySelectorAll("[data-participant]").forEach((btn) => {
+    btn.addEventListener("click", () => deleteParticipant(btn.getAttribute("data-participant")));
+  });
+}
+
+async function refresh() {
+  const { data, error } = await supabase.rpc("admin_get_all", { p_password: password });
+  if (error) { showError("Erro ao atualizar lista."); return; }
+  allData = data || [];
+  renderList();
+}
+
+async function deleteBooking(bookingId) {
+  if (!confirm("Excluir este agendamento e liberar o horário?")) return;
+  const { data, error } = await supabase.rpc("admin_delete_booking", { p_password: password, p_booking_id: bookingId });
+  if (error || !data.ok) { showError(data?.error || "Erro ao excluir."); return; }
+  refresh();
+}
+
+async function deleteParticipant(participantId) {
+  if (!confirm("Excluir esta participante e TODOS os agendamentos dela?")) return;
+  const { data, error } = await supabase.rpc("admin_delete_participant", { p_password: password, p_participant_id: participantId });
+  if (error || !data.ok) { showError(data?.error || "Erro ao excluir."); return; }
+  refresh();
+}
+
+document.getElementById("btn-export").addEventListener("click", () => {
+  const rows = allData.map((p) => {
+    const row = { Nome: p.name, WhatsApp: p.whatsapp };
+    TESTS.forEach((t) => {
+      const b = (p.bookings || []).find((bk) => bk.test_id === t.id);
+      row[t.label] = b ? formatDateBR(b.date) + (b.time ? " às " + b.time : "") : "—";
+    });
+    return row;
+  });
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Agendamentos");
+  XLSX.writeFile(wb, "agendamentos.xlsx");
+});
+
+document.getElementById("btn-import").addEventListener("click", async () => {
+  if (!confirm("Isso vai APAGAR todos os horários e agendamentos atuais e importar a planilha original do zero. Confirma?")) return;
+  const res = await fetch("assets/tests-data.json");
+  const json = await res.json();
+  const { data, error } = await supabase.rpc("admin_import_slots", { p_password: password, p_data: json });
+  if (error || !data.ok) { showError(data?.error || "Erro ao importar."); return; }
+  alert(`Importação concluída! ${data.total} horários importados.`);
+  refresh();
+});
+
+if (password) {
+  tryLogin();
+}
+</script>
+</body>
+</html>

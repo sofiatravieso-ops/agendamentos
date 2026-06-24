@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Agendamento confirmado</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<div class="wrap" id="wrap">
+  <div class="loading">Carregando seu resumo...</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="assets/config.js"></script>
+<script>
+const participantId = localStorage.getItem("participant_id");
+if (!participantId) window.location.href = "index.html";
+
+async function load() {
+  const { data, error } = await supabase.rpc("get_my_bookings", { p_participant_id: participantId });
+  const wrap = document.getElementById("wrap");
+
+  if (error || !data || !data.participant) {
+    wrap.innerHTML = '<div class="error-box">Não foi possível carregar seu resumo. Recarregue a página.</div>';
+    return;
+  }
+
+  const bookings = data.bookings || [];
+
+  let html = `
+    <div class="center" style="margin-bottom:20px;">
+      <div style="font-size:48px;">✅</div>
+      <h1>Tudo agendado!</h1>
+      <p class="muted">${data.participant.name}, aqui está o resumo dos seus testes:</p>
+    </div>
+  `;
+
+  TESTS.forEach((test) => {
+    const b = bookings.find((bk) => bk.test_id === test.id);
+    html += `<div class="card">
+      <div style="font-weight:700;font-size:18px;margin-bottom:6px;">${test.icon} ${test.label}</div>`;
+    if (b) {
+      html += `<div style="color:var(--blue-600);font-size:18px;text-transform:capitalize;">
+        ${formatDateFull(b.date)}${b.time ? ` às <strong>${b.time}</strong>` : ""}
+      </div>`;
+    } else {
+      html += `<div style="color:var(--red-500);">Não agendado</div>`;
+    }
+    html += `</div>`;
+  });
+
+  html += `<div class="card" style="background:var(--blue-50);text-align:center;">
+    Guarde estas datas! Qualquer dúvida, fale com a organizadora no WhatsApp.
+  </div>`;
+
+  wrap.innerHTML = html;
+}
+
+load();
+</script>
+</body>
+</html>

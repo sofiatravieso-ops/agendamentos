@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Agendar testes</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="row-between">
+    <span class="muted" id="step-label" style="font-weight:600;"></span>
+    <div class="steps" id="steps"></div>
+  </div>
+
+  <div class="card">
+    <h1 id="test-title"></h1>
+    <p class="muted">Escolha um dia e horário disponível</p>
+  </div>
+
+  <div id="error" class="error-box" style="display:none;"></div>
+  <div id="content"><div class="loading">Carregando horários...</div></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="assets/config.js"></script>
+<script>
+let testIndex = parseInt(localStorage.getItem("current_test_index") || "0", 10);
+let participantId = localStorage.getItem("participant_id") || null;
+const name = localStorage.getItem("participant_name");
+const whatsapp = localStorage.getItem("participant_whatsapp");
+let selectedDate = null;
+let currentSlots = [];
+
+if (!name || !whatsapp) {
+  window.location.href = "index.html";
+}
+if (testIndex >= TESTS.length) {
+  window.location.href = "confirmacao.html";
+}
+
+function renderSteps() {
+  document.getElementById("step-label").textContent = `Teste ${testIndex + 1} de ${TESTS.length}`;
+  const stepsEl = document.getElementById("steps");
+  stepsEl.innerHTML = "";
+  TESTS.forEach((t, i) => {
+    const dot = document.createElement("div");
+    dot.className = "dot" + (i < testIndex ? " done" : i === testIndex ? " active" : "");
+    stepsEl.appendChild(dot);
+  });
+}
+
+function showError(msg) {
+  const box = document.getElementById("error");
+  box.textContent = msg;
+  box.style.display = msg ? "block" : "none";
+}
+
+async function loadSlots() {
+  showError("");
+  selectedDate = null;
+  const test = TESTS[testIndex];
+  document.getElementById("test-title").textContent = `${test.icon} ${test.label}`;
+  document.getElementById("content").innerHTML = '<div class="loading">Carregando horários...</div>';
+
+  const { data, error } = await supabase
+    .from("slots")
+    .select("id, date, time, capacity, booked_count")
+    .eq("test_id", test.id)
+    .order("date", { ascending: true })
+    .order("time", { ascending: true });
+
+  if (error) {
+    document.getElementById("content").innerHTML = "";
+    showError("Não foi possível carregar os horários. Recarregue a página.");
+    return;
+  }
+
+  currentSlots = (data || []).filter((s) => s.booked_count < s.capacity);
+  renderDates();
+}
+
+function renderDates() {
+  const test = TESTS[testIndex];
+  const byDate = {};
+  currentSlots.forEach((s) => {
+    if (!byDate[s.date]) byDate[s.date] = [];
+    byDate[s.date].push(s);
+  });
+  const dates = Object.keys(byDate).sort();
+  const content = document.getElementById("content");
+
+  if (dates.length === 0) {
+    content.innerHTML = '<div class="card center muted">Não há mais horários disponíveis para este teste. Fale com a organizadora.</div>';
+    return;
+  }
+
+  if (!selectedDate) {
+    content.innerHTML = '<p style="font-weight:600;margin-bottom:10px;">Escolha o dia:</p>' +
+      dates.map((date) => `
+        <button class="day-btn" data-date="${date}">
+          <span style="text-transform:capitalize;">${formatDateFull(date)}</span>
+          <span class="vagas">${byDate[date].length} vaga${byDate[date].length > 1 ? "s" : ""}</span>
+        </button>
+      `).join("");
+
+    content.querySelectorAll(".day-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        selectedDate = btn.getAttribute("data-date");
+        renderDates();
+      });
+    });
+    return;
+  }
+
+  const isDaily = test.id === "sangue";
+  let html = `<button class="link-back" id="back-btn">← Escolher outro dia</button>`;
+  html += `<p style="font-weight:600;text-transform:capitalize;">${formatDateFull(selectedDate)}</p>`;
+
+  if (isDaily) {
+    html += `<button class="btn" id="confirm-day">Confirmar este dia</button>`;
+  } else {
+    html += `<div class="time-grid">` + byDate[selectedDate].map((s) =>
+      `<button class="time-btn" data-slot="${s.id}">${s.time}</button>`
+    ).join("") + `</div>`;
+  }
+
+  content.innerHTML = html;
+
+  document.getElementById("back-btn").addEventListener("click", () => {
+    selectedDate = null;
+    renderDates();
+  });
+
+  if (isDaily) {
+    document.getElementById("confirm-day").addEventListener("click", () => chooseSlot(byDate[selectedDate][0]));
+  } else {
+    content.querySelectorAll(".time-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const slot = byDate[selectedDate].find((s) => s.id === btn.getAttribute("data-slot"));
+        chooseSlot(slot);
+      });
+    });
+  }
+}
+
+async function chooseSlot(slot) {
+  showError("");
+  document.querySelectorAll(".time-btn, #confirm-day").forEach((b) => (b.disabled = true));
+
+  const { data, error } = await supabase.rpc("create_booking", {
+    p_name: name,
+    p_whatsapp: whatsapp,
+    p_participant_id: participantId,
+    p_slot_id: slot.id,
+    p_test_id: TESTS[testIndex].id,
+  });
+
+  if (error) {
+    showError("Erro de conexão. Verifique a internet e tente novamente.");
+    document.querySelectorAll(".time-btn, #confirm-day").forEach((b) => (b.disabled = false));
+    return;
+  }
+
+  if (!data.ok) {
+    showError(data.error || "Não foi possível agendar. Tente outro horário.");
+    if (data.participant_id) {
+      participantId = data.participant_id;
+      localStorage.setItem("participant_id", participantId);
+    }
+    loadSlots();
+    return;
+  }
+
+  participantId = data.participant_id;
+  localStorage.setItem("participant_id", participantId);
+  testIndex += 1;
+  localStorage.setItem("current_test_index", String(testIndex));
+
+  if (testIndex >= TESTS.length) {
+    window.location.href = "confirmacao.html";
+  } else {
+    renderSteps();
+    loadSlots();
+  }
+}
+
+renderSteps();
+loadSlots();
+</script>
+</body>
+</html>

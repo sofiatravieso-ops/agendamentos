@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Agendamento dos Testes - Pós</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card">
+    <h1>Oi meninas! 💙</h1>
+    <p>Para as avaliações finais vamos tentar fazer o agendamento por esse site, para facilitar para todas! Os horários disponíveis para cada teste são fixados nas datas que aparecem, assim que alguém agenda esse horário, ele para de ficar disponível, então se um horário não aparece, provavelmente ele foi agendado para outra voluntária.</p>
+    <p>Qualquer dúvida, me mande mensagem no Whats.</p>
+  </div>
+
+  <div class="card">
+    <h2>Vamos começar</h2>
+    <form id="form-start">
+      <label for="name">Nome completo</label>
+      <input type="text" id="name" placeholder="Digite seu nome" required>
+
+      <label for="whats">WhatsApp (com DDD)</label>
+      <input type="tel" id="whats" placeholder="(00) 00000-0000" required>
+
+      <div id="error" class="error-box" style="display:none;"></div>
+
+      <button type="submit" class="btn" id="btn-start">Começar agendamento →</button>
+    </form>
+  </div>
+
+  <p class="center muted">Você vai agendar os 4 testes, um de cada vez.</p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="assets/config.js"></script>
+<script>
+  // Se já começou (ou terminou) o agendamento neste celular, pula direto
+  if (localStorage.getItem("participant_id")) {
+    window.location.href = "agendar.html";
+  }
+
+  document.getElementById("form-start").addEventListener("submit", function (e) {
+    e.preventDefault();
+    const name = document.getElementById("name").value.trim();
+    const whats = document.getElementById("whats").value.trim();
+    const errorBox = document.getElementById("error");
+
+    if (!name || !whats) return;
+
+    localStorage.setItem("participant_name", name);
+    localStorage.setItem("participant_whatsapp", cleanPhone(whats));
+    localStorage.setItem("current_test_index", "0");
+    window.location.href = "agendar.html";
+  });
+</script>
+</body>
+</html>
